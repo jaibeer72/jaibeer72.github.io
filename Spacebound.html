@@ -1,0 +1,186 @@
+// JavaScript Document
+//this is where the main loop will be 
+
+//----------------------------------
+//Variables-------------------------
+//----------------------------------
+
+var canvas,ctx;
+var player={
+	x:0,
+	y:625,	
+};
+//okay More Variables
+var LEND_X;
+var LEND_Y;
+var MaxDrawDistLine=300;
+var Planet={	
+	active:false,
+	x:50,
+	y:50,
+	d:50,
+	vy:1,
+	vx:1,
+	R_Min:{x:0,y:0},
+	R_Max:{x:400,y:184},
+	sp:{rad:48,x:0,y:0},//d1-d2=dxof the inner circle center ramdomize
+};
+var no=0;
+var PlanetArr=[3];
+//------------------------------
+//Mouse Event				----
+//------------------------------
+function mouseEventManager(evt){
+		var rect=canvas.getBoundingClientRect(); 
+		var root=document.documentElement; 
+		var mouseX=evt.clientX-rect.left-root.scrollLeft; 
+		var mouseY=evt.clientY-rect.top-root.scrollTop;
+		return{
+			x:mouseX,y:mouseY
+		}; 
+	}
+//-------------------------
+//Initialisation Functio	
+//-------------------------
+window.onload=function(){
+	canvas=document.querySelector('canvas');
+	ctx=canvas.getContext('2d'); 	
+	//The Looper
+	
+	setInterval(function init(){
+		GameLoop();
+	},1000/60);
+}
+
+//--------------------------------
+// Game Loop Function
+//----------------------------------
+//Please make sure to give player.x and y
+
+function GameLoop(){
+	// more Variables Just dont Ask I do not like JS
+	//var lineEnd
+	//Creating White BG
+	ClearBG();
+	//Drawing Player
+	Draw_Player(player.x=canvas.width/2,player.y);
+	//Mouse Listener
+	canvas.addEventListener('mousemove',function(evt){
+	var mousePos = mouseEventManager(evt);
+	LEND_X=mousePos.x;
+	LEND_Y=mousePos.y;
+	});
+	DrawPath(LEND_X,LEND_Y);
+	//DrawPlanet();
+	
+}
+
+//---------------------------
+//Clear canvas function---
+//--------------------------
+
+function ClearBG(){
+	//ctx.fillStyle="white";
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	//console.log("reaches ClearBG");
+}
+//----------------
+//Player Functions
+//-----------------
+function Draw_Player(x,y){
+	ctx.fillStyle="blue";
+	ctx.fillRect(x-25,y,50,50);	
+}
+
+
+							
+function movePlayer(){ 
+
+}
+
+//--------------------------
+//Randomely Draws Asteroids
+//-------------------------
+
+/*function DrawPlanet(x,y,d/2,min,max,FILL){
+	//Planet BG
+	ctx.fillStyle="#f68e56";
+	ctx.beginPath(); 
+	ctx.arc(x,y,123/2,0,Math.PI*2,true);
+	ctx.fill();
+	//planet Front
+	ctx.fillStyle="#d33737";
+	ctx.beginPath(); 
+	ctx.arc(x,y,115/2,0,Math.PI*2,true);
+	ctx.fill();
+	
+}*/
+function updatePlanet(x,y,vx,vy,d){
+	this.x=x;
+	this.y=y;
+	this.vx=vx;
+	this.vy=vy;
+	this.rad=d/2;
+	//console.log("X and y of the planets"+x+"y"+y);
+	this.draw = function() {
+    ctx.fillStyle="#f68e56";
+	ctx.beginPath();		
+    ctx.arc(this.x, this.y, this.rad, 0, 2*Math.PI,true);
+    ctx.fill();
+  };
+  
+  this.move = function() {
+    
+    //this.x += this.vx;
+    this.y += this.vy;
+  };
+}
+//-----------------------------
+//Planet Randomizer      ------
+//-----------------------------
+function planetRandomizer(){
+	var PX=Math.random()*(canvas.width);
+	PlanetArr.push=new updatePlanet(PX,Planet.y,Planet.vx,Planet.vy,Planet.d);
+	//alert("check If error");
+}
+
+
+//-----------------------
+//Path Creator
+//-----------------------
+function DrawPath(LEnd_X,LEnd_Y){
+var LineEnd=MathClampToR(LEnd_X,LEnd_Y);
+ctx.beginPath();
+ctx.setLineDash([5, 15]);
+ctx.moveTo(player.x,player.y);
+ctx.lineTo(LineEnd.x,LineEnd.y);
+ctx.stroke();
+//console.log("Xcoord "+ LEnd_X+"Ycoord "+LEnd_Y);
+//ctx.beginPath();
+//ctx.setLineDash([]);
+//ctx.moveTo(0, 150);
+//ctx.lineTo(400, 150);
+//ctx.stroke();	
+}
+//------------------------------
+//Math TO Clamp the Maxdrawing r
+//-------------------------------
+function MathClampToR(x,y)
+{
+	var dx=x-player.x;
+	var dy=y-player.y;
+	if((dx * dx + dy * dy)<(MaxDrawDistLine*MaxDrawDistLine))
+		{
+			return{ x:x,y:y};
+		}
+	else
+		{
+			
+			var angle=Math.atan2(dy,dx);
+			var xx=player.x+MaxDrawDistLine*Math.cos(angle);
+			var yy=player.y+MaxDrawDistLine*Math.sin(angle);
+			return{
+				x:xx,y:yy
+			};
+		}
+}
