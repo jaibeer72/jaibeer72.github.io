@@ -12,7 +12,7 @@
 
 * lowecase every branch name
 * format [feature-name/attribute]
-..* example 
+    * example 
 ```git
 image-card/masking-image
 ``` 
@@ -21,7 +21,7 @@ image-card/masking-image
 
 * lowecase every branch name
 * format [test/feature/attribute]
-..* example 
+    * example 
 ```git
 test/image-card/masking-image-position
 ``` 
