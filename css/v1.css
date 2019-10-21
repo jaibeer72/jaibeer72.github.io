@@ -16,4 +16,20 @@ html {
   color: #93a1a1;
 }
 
+nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-decoration: #6c71c4;
+}
+nav li {
+  display: inline-block;
+  text-decoration: #6c71c4;
+}
+nav a {
+  display: block;
+  padding: 6px 12px;
+  text-decoration: #6c71c4;
+}
+
 /*# sourceMappingURL=v1.css.map */
