@@ -1,0 +1,88 @@
+html {
+  background-color: #002b36;
+}
+
+.header-font, h1 {
+  font-family: Roboto;
+  font: bold;
+  color: #93a1a1;
+}
+
+nav {
+  display: flex;
+  justify-content: right;
+  align-items: center;
+  color: #dc322f;
+  background-color: #073642;
+  height: 3rem;
+  width: 100%;
+  list-style: none;
+}
+nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-decoration: #6c71c4;
+}
+nav li {
+  text-decoration: #6c71c4;
+  align: right;
+  padding: 10px;
+}
+nav a {
+  padding: 6px 12px;
+  text-decoration: #6c71c4;
+}
+
+.title-button {
+  color: #002b36;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-weight: bold;
+  padding: 5rem;
+  align-items: center;
+}
+.title-button .current {
+  display: flex;
+  background-color: #93a1a1;
+  border-radius: 50px;
+  justify-content: center;
+  padding: 0.5rem;
+  margin: 1rem;
+}
+.title-button .next {
+  display: flex;
+  background-color: #93a1a1;
+  border-radius: 50px;
+  justify-content: right;
+  padding: 0.5rem;
+  margin: 1rem;
+}
+.title-button .previous {
+  display: flex;
+  background-color: #93a1a1;
+  border-radius: 50px;
+  justify-content: left;
+  padding: 0.5rem;
+  margin: 1rem;
+}
+
+h1 {
+  color: #d33682;
+  padding-left: 5rem;
+  margin: 1rem;
+  margin-top: 0.1rem;
+  display: flex;
+  align-content: center;
+  justify-content: left;
+  font-weight: normal;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  border-bottom-style: solid;
+  border-bottom-width: 0.2rem;
+  border-color: #073642;
+}
+
+.content-container {
+  color: #073642;
+}
+
+/*# sourceMappingURL=v1.css.map */
