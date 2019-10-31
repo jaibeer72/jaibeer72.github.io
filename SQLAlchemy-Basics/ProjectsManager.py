@@ -9,4 +9,4 @@ class ProjectsManger:
     
     def validate(self):
         return self.isValid
-        
+    
