@@ -8,5 +8,9 @@ class ProjectsManger:
         self.gitlink = gitlink
     
     def validate(self):
+        #Checking for null or empty
+        if not self.gitlink: 
+            self.isValid = False
+
         return self.isValid
     
