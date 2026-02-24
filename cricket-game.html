@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Cricket Batting Challenge</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      height: 100dvh;
+      width: 100vw;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+      touch-action: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function () {
+  'use strict';
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const MAX_W = 480;
+
+  // ─── responsive setup ───────────────────────────────────────────────────────
+  function resize() {
+    canvas.width  = Math.min(window.innerWidth,  MAX_W);
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ─── constants ───────────────────────────────────────────────────────────────
+  const TOTAL_BALLS   = 6;
+  const BOWL_MS       = 2400;   // time for ball to travel from bowler to batsman
+  const SWEET_T       = 0.70;   // fraction of travel when ball is in perfect hitting zone
+
+  // ─── state ───────────────────────────────────────────────────────────────────
+  // States: START | READY | BOWLING | HIT | RESULT | GAMEOVER
+  let gameState  = 'START';
+  let totalScore = 0;
+  let ballNum    = 0;
+  let history    = [];   // [{runs, label}]
+
+  // ball
+  let bBowlTime = 0;
+  let bX = 0, bY = 0, bR = 0, bT = 0;
+  let bDriftX = 0;
+
+  // swipe
+  let ptrX = 0, ptrY = 0;
+  let swipeDone = false;
+
+  // hit animation
+  let hitActive = false;
+  let hitTime   = 0;
+  let hitX = 0, hitY = 0, hitAngle = 0, hitRuns = 0, hitLabel = '';
+
+  // result / auto-advance
+  let resultTime = 0;
+
+  // ─── helpers ─────────────────────────────────────────────────────────────────
+  function W() { return canvas.width;  }
+  function H() { return canvas.height; }
+
+  /** Smoothstep easing 0→1 */
+  function ss(t) { return t * t * (3 - 2 * t); }
+
+  /** Ball world position at travel-fraction t */
+  function ballAt(t) {
+    const vpY  = H() * 0.19;
+    const batY = H() * 0.76;
+    const e    = ss(t);
+    return {
+      x: W() / 2 + bDriftX * e,
+      y: vpY + (batY - vpY) * e,
+      r: 5 + 38 * e,
+    };
+  }
+
+  /** Compute runs + label from timing error (ms) */
+  function calcRuns(diff) {
+    if (diff < 130) return [6, 'PERFECT!'];
+    if (diff < 280) return [4, 'GREAT!'];
+    if (diff < 450) return [3, 'GOOD'];
+    if (diff < 650) return [2, 'OK'];
+    return [1, 'MISS-HIT'];
+  }
+
+  // ─── game logic ──────────────────────────────────────────────────────────────
+  function startGame() {
+    totalScore = 0;
+    ballNum    = 0;
+    history    = [];
+    gameState  = 'READY';
+  }
+
+  function bowl() {
+    if (gameState !== 'READY') return;
+    bBowlTime  = performance.now();
+    bDriftX    = (Math.random() - 0.5) * 28;
+    swipeDone  = false;
+    hitActive  = false;
+    gameState  = 'BOWLING';
+  }
+
+  function doHit(dx, dy) {
+    if (gameState !== 'BOWLING' || swipeDone) return;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 22) return;       // too small – probably a tap
+    if (dy > 25)   return;       // must not be a strong downward swipe
+
+    swipeDone = true;
+    const elapsed   = performance.now() - bBowlTime;
+    const sweetTime = BOWL_MS * SWEET_T;
+    const diff      = Math.abs(elapsed - sweetTime);
+    const [runs, label] = calcRuns(diff);
+
+    ballNum++;
+    history.push({ runs, label });
+    totalScore += runs;
+
+    hitActive = true;
+    hitTime   = performance.now();
+    const pos = ballAt(bT);
+    hitX      = pos.x;
+    hitY      = pos.y;
+    hitAngle  = Math.atan2(dy, dx);
+    hitRuns   = runs;
+    hitLabel  = label;
+
+    if (navigator.vibrate) navigator.vibrate([30, 20, 60]);
+    gameState = 'HIT';
+  }
+
+  function doMiss() {
+    swipeDone = true;
+    ballNum++;
+    history.push({ runs: 0, label: 'DOT' });
+    resultTime = performance.now();
+    gameState  = 'RESULT';
+  }
+
+  function advanceAfterResult() {
+    gameState = (ballNum >= TOTAL_BALLS) ? 'GAMEOVER' : 'READY';
+  }
+
+  // ─── update ──────────────────────────────────────────────────────────────────
+  function update(now) {
+    if (gameState === 'BOWLING') {
+      bT = Math.min(1, (now - bBowlTime) / BOWL_MS);
+      const p = ballAt(bT);
+      bX = p.x; bY = p.y; bR = p.r;
+      if (bT >= 1 && !swipeDone) doMiss();
+    }
+
+    if (gameState === 'HIT') {
+      if (now - hitTime > 1300) {
+        hitActive  = false;
+        resultTime = now;
+        gameState  = 'RESULT';
+      }
+    }
+
+    if (gameState === 'RESULT') {
+      if (now - resultTime > 2000) advanceAfterResult();
+    }
+  }
+
+  // ─── drawing ─────────────────────────────────────────────────────────────────
+
+  /** Rounded-rect path helper (avoids ctx.roundRect browser compat issues) */
+  function rrPath(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arc(x + w - r, y + r, r, -Math.PI / 2, 0);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+    ctx.lineTo(x + r, y + h);
+    ctx.arc(x + r, y + h - r, r, Math.PI / 2, Math.PI);
+    ctx.lineTo(x, y + r);
+    ctx.arc(x + r, y + r, r, Math.PI, -Math.PI / 2);
+    ctx.closePath();
+  }
+
+  function fillButton(cx, cy, bw, bh, text, bg, fg) {
+    const x = cx - bw / 2, y = cy - bh / 2, r = bh / 2;
+    ctx.fillStyle = bg;
+    rrPath(x, y, bw, bh, r);
+    ctx.fill();
+    ctx.fillStyle = fg;
+    ctx.font = `bold ${bh * 0.44}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText(text, cx, cy + bh * 0.17);
+  }
+
+  // ── field background ──
+  function drawField() {
+    const cw = W(), ch = H();
+
+    // sky
+    const sky = ctx.createLinearGradient(0, 0, 0, ch * 0.38);
+    sky.addColorStop(0, '#4a9fd4');
+    sky.addColorStop(1, '#a0d4ef');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, cw, ch * 0.38);
+
+    // clouds
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    cloud(cw * 0.18, ch * 0.07, 42, 17);
+    cloud(cw * 0.70, ch * 0.11, 55, 21);
+    cloud(cw * 0.47, ch * 0.04, 33, 13);
+
+    // outfield
+    const field = ctx.createLinearGradient(0, ch * 0.38, 0, ch);
+    field.addColorStop(0, '#2e8b2e');
+    field.addColorStop(0.55, '#216b21');
+    field.addColorStop(1, '#164c16');
+    ctx.fillStyle = field;
+    ctx.fillRect(0, ch * 0.38, cw, ch * 0.62);
+
+    // mowing stripes
+    for (let i = 0; i < 8; i++) {
+      const y1 = ch * 0.38 + (ch * 0.62 / 8) * i;
+      const y2 = ch * 0.38 + (ch * 0.62 / 8) * (i + 1);
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.055)';
+        ctx.fillRect(0, y1, cw, y2 - y1);
+      }
+    }
+
+    // crowd silhouette
+    drawCrowd();
+
+    // pitch (perspective trapezoid)
+    const cx  = cw / 2;
+    const ptW = 42, pbW = 128;
+    const ptY = ch * 0.19, pbY = ch * 0.88;
+    const pg  = ctx.createLinearGradient(0, ptY, 0, pbY);
+    pg.addColorStop(0, '#b59060');
+    pg.addColorStop(1, '#c8a47a');
+    ctx.fillStyle = pg;
+    ctx.beginPath();
+    ctx.moveTo(cx - ptW / 2, ptY);
+    ctx.lineTo(cx + ptW / 2, ptY);
+    ctx.lineTo(cx + pbW / 2, pbY);
+    ctx.lineTo(cx - pbW / 2, pbY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(130,90,40,0.28)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // creases
+    ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+    // bowling crease (far)
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - ptW / 2 - 5, ptY + 34);
+    ctx.lineTo(cx + ptW / 2 + 5, ptY + 34);
+    ctx.stroke();
+    // batting crease (near)
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - pbW / 2 - 12, ch * 0.775);
+    ctx.lineTo(cx + pbW / 2 + 12, ch * 0.775);
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - pbW / 2 - 8, ch * 0.805);
+    ctx.lineTo(cx + pbW / 2 + 8, ch * 0.805);
+    ctx.stroke();
+
+    // stumps – bowler end (far/small)
+    drawStumps(cx, ptY + 10, 9, 14);
+    // stumps – batsman end (near/large)
+    drawStumps(cx, ch * 0.82, 36, 52);
+  }
+
+  function cloud(x, y, rw, rh) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rw, rh, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x - rw * 0.42, y + rh * 0.3, rw * 0.58, rh * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + rw * 0.42, y + rh * 0.3, rw * 0.58, rh * 0.68, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawCrowd() {
+    const cw = W(), ch = H();
+    const cy = ch * 0.33;
+    ctx.fillStyle = '#1b641b';
+    ctx.beginPath();
+    ctx.moveTo(0, cy + 10);
+    ctx.bezierCurveTo(cw * 0.25, cy - 22, cw * 0.75, cy - 22, cw, cy + 10);
+    ctx.lineTo(cw, cy + 34);
+    ctx.lineTo(0, cy + 34);
+    ctx.closePath();
+    ctx.fill();
+    for (let i = 0; i < 52; i++) {
+      const px = cw * 0.02 + (cw * 0.96) * (i / 52);
+      const py = cy - 14 + Math.sin(i * 2.1) * 7;
+      ctx.fillStyle = `hsl(${(i * 29) % 360},55%,48%)`;
+      ctx.beginPath();
+      ctx.arc(px, py, 2.8 + Math.sin(i * 1.7), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawStumps(cx, topY, width, height) {
+    const gap = width / 4;
+    const far = height < 20;
+    ctx.strokeStyle = far ? 'rgba(195,155,95,0.72)' : '#c0a070';
+    ctx.lineWidth   = far ? 1.5 : 3.5;
+    ctx.lineCap     = 'round';
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + i * gap, topY + height);
+      ctx.lineTo(cx + i * gap, topY);
+      ctx.stroke();
+    }
+    ctx.lineWidth = far ? 1 : 2;
+    const sw = width / 6;
+    [-gap, gap].forEach(ox => {
+      ctx.beginPath();
+      ctx.moveTo(cx + ox - sw, topY);
+      ctx.lineTo(cx + ox + sw, topY);
+      ctx.stroke();
+    });
+  }
+
+  function drawBatsman() {
+    const cw = W(), ch = H();
+    const bx = cw / 2, by = ch * 0.87;
+    ctx.save();
+    ctx.translate(bx, by);
+
+    // body
+    ctx.fillStyle = 'rgba(40,70,40,0.88)';
+    ctx.fillRect(-17, -42, 34, 48);
+
+    // helmet
+    ctx.fillStyle = '#2a2a5a';
+    ctx.beginPath();
+    ctx.ellipse(0, -47, 20, 16, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = '#44448a';
+    ctx.fillRect(-21, -47, 42, 8);
+
+    // bat (right side)
+    ctx.fillStyle = '#c8a460';
+    ctx.fillRect(15, -56, 10, 62);
+    ctx.fillStyle = '#b89040';
+    ctx.fillRect(15, 6, 10, 18);
+
+    ctx.restore();
+  }
+
+  function drawBall() {
+    const ch = H();
+    // shadow on pitch surface
+    ctx.save();
+    ctx.globalAlpha = 0.22 * (bR / 43);
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(bX, ch * 0.77, bR * 0.85, bR * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // ball gradient
+    const g = ctx.createRadialGradient(
+      bX - bR * 0.3, bY - bR * 0.3, bR * 0.05,
+      bX, bY, bR
+    );
+    g.addColorStop(0, '#ff6666');
+    g.addColorStop(0.45, '#cc1111');
+    g.addColorStop(1, '#7a0000');
+    ctx.beginPath();
+    ctx.arc(bX, bY, bR, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // seam
+    ctx.strokeStyle = 'rgba(255,210,190,0.52)';
+    ctx.lineWidth = Math.max(1, bR * 0.09);
+    ctx.beginPath();
+    ctx.arc(bX, bY, bR * 0.6, 0.4, Math.PI + 0.4);
+    ctx.stroke();
+
+    // highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.17)';
+    ctx.beginPath();
+    ctx.ellipse(bX - bR * 0.28, bY - bR * 0.28, bR * 0.27, bR * 0.17, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawTimingZone(now) {
+    const cw = W(), ch = H();
+    const sweetY = ballAt(SWEET_T).y;
+    const pulse  = 0.14 + 0.08 * Math.sin(now / 240);
+    const zH     = ch * 0.10;
+
+    const grad = ctx.createLinearGradient(0, sweetY - zH, 0, sweetY + zH);
+    grad.addColorStop(0,   'rgba(255,255,0,0)');
+    grad.addColorStop(0.5, `rgba(255,255,0,${pulse})`);
+    grad.addColorStop(1,   'rgba(255,255,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, sweetY - zH, cw, zH * 2);
+
+    if (bT > 0.32 && bT < 0.92) {
+      ctx.fillStyle = `rgba(255,230,0,${0.48 + 0.26 * Math.sin(now / 240)})`;
+      ctx.font      = `${cw * 0.038}px Arial`;
+      ctx.textAlign = 'right';
+      ctx.fillText('HIT ZONE ▶', cw * 0.96, sweetY + 5);
+    }
+  }
+
+  function drawSwipeHint(now) {
+    if (swipeDone) return;
+    const cw = W(), ch = H();
+    const alpha = 0.4 + 0.22 * Math.sin(now / 380);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.font      = `bold ${cw * 0.052}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText('↑  SWIPE UP TO HIT  ↑', cw / 2, ch * 0.945);
+  }
+
+  function drawHitFx(now) {
+    if (!hitActive) return;
+    const cw = W(), ch = H();
+    const elapsed = now - hitTime;
+    const t = Math.min(1, elapsed / 1300);
+
+    // flying ball arc
+    const dist = cw * 1.25 * t;
+    const ex = hitX + Math.cos(hitAngle) * dist;
+    const ey = hitY + Math.sin(hitAngle) * dist * 0.55;
+    const er = Math.max(3, bR * (1 - t * 0.72));
+
+    // arc trail
+    ctx.strokeStyle = `rgba(255,215,50,${0.75 * (1 - t)})`;
+    ctx.lineWidth   = 4;
+    ctx.beginPath();
+    ctx.moveTo(hitX, hitY);
+    ctx.quadraticCurveTo(
+      hitX + (ex - hitX) * 0.3,
+      hitY + (ey - hitY) * 0.3 - 55 * t,
+      ex, ey
+    );
+    ctx.stroke();
+
+    // ball
+    const bg = ctx.createRadialGradient(ex, ey, 0, ex, ey, er);
+    bg.addColorStop(0, '#ff6644');
+    bg.addColorStop(1, '#cc2200');
+    ctx.beginPath();
+    ctx.arc(ex, ey, er, 0, Math.PI * 2);
+    ctx.fillStyle = bg;
+    ctx.fill();
+
+    // impact burst
+    if (elapsed < 280) {
+      const bt  = elapsed / 280;
+      const br  = 65 * bt;
+      const ba  = 1 - bt;
+      ctx.strokeStyle = `rgba(255,240,0,${ba * 0.88})`;
+      ctx.lineWidth   = 4 * (1 - bt);
+      ctx.beginPath();
+      ctx.arc(hitX, hitY, br, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.strokeStyle = `rgba(255,200,0,${ba * 0.65})`;
+        ctx.lineWidth   = 2;
+        ctx.beginPath();
+        ctx.moveTo(hitX + Math.cos(a) * 18, hitY + Math.sin(a) * 18);
+        ctx.lineTo(hitX + Math.cos(a) * br * 0.78, hitY + Math.sin(a) * br * 0.5);
+        ctx.stroke();
+      }
+    }
+
+    // runs + quality label
+    const textFade = Math.min(1, elapsed / 200) * (1 - Math.max(0, (t - 0.68) / 0.32));
+    const textY    = ch * 0.44 - 18 * t;
+    ctx.save();
+    ctx.globalAlpha = textFade;
+    ctx.textAlign   = 'center';
+
+    let col = '#ffffff';
+    if (hitLabel === 'PERFECT!') col = '#FFD700';
+    else if (hitLabel === 'GREAT!') col = '#44ff88';
+    else if (hitLabel === 'GOOD')   col = '#88ff44';
+
+    ctx.shadowColor = 'rgba(0,0,0,0.85)';
+    ctx.shadowBlur  = 12;
+    ctx.fillStyle   = col;
+    ctx.font        = `bold ${cw * 0.22}px Arial`;
+    ctx.fillText(`${hitRuns}`, cw / 2, textY);
+    ctx.font        = `bold ${cw * 0.068}px Arial`;
+    ctx.fillText(hitLabel, cw / 2, textY + cw * 0.08);
+    ctx.restore();
+  }
+
+  function drawHUD() {
+    const cw = W(), ch = H();
+    const hudH = ch * 0.10;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.66)';
+    ctx.fillRect(0, 0, cw, hudH);
+
+    // score
+    ctx.fillStyle = '#FFD700';
+    ctx.font      = `bold ${ch * 0.036}px Arial`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`${totalScore}`, cw * 0.06, hudH * 0.66);
+    ctx.font      = `${ch * 0.021}px Arial`;
+    ctx.fillStyle = 'rgba(255,215,0,0.7)';
+    ctx.fillText('RUNS', cw * 0.06, hudH * 0.88);
+
+    // balls left
+    const left = TOTAL_BALLS - ballNum;
+    ctx.fillStyle = 'white';
+    ctx.font      = `bold ${ch * 0.036}px Arial`;
+    ctx.textAlign = 'right';
+    ctx.fillText(`${left}`, cw * 0.94, hudH * 0.66);
+    ctx.font      = `${ch * 0.021}px Arial`;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('BALLS LEFT', cw * 0.94, hudH * 0.88);
+
+    // ball-history dots
+    const dotR   = cw * 0.022;
+    const gap    = dotR * 0.8;
+    const totalDW = TOTAL_BALLS * dotR * 2 + (TOTAL_BALLS - 1) * gap;
+    let   dotX   = cw / 2 - totalDW / 2 + dotR;
+    const dotY   = hudH * 0.50;
+
+    for (let i = 0; i < TOTAL_BALLS; i++) {
+      if (i < history.length) {
+        const b = history[i];
+        ctx.fillStyle = b.runs === 0 ? '#ff4444'
+          : b.runs >= 6 ? '#FFD700'
+          : b.runs >= 4 ? '#44ff88'
+          : b.runs >= 2 ? '#88ccff'
+          : '#ffffff';
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font      = `bold ${dotR * 1.15}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.fillText(b.runs, dotX, dotY + dotR * 0.42);
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+        ctx.lineWidth   = 1.5;
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      dotX += dotR * 2 + gap;
+    }
+  }
+
+  function drawReadyUI(now) {
+    const cw = W(), ch = H();
+    drawBowlerFigure(cw / 2, ch * 0.24);
+    const alpha = 0.7 + 0.28 * Math.sin(now / 490);
+    ctx.fillStyle = `rgba(255,218,50,${alpha})`;
+    ctx.font      = `bold ${cw * 0.052}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`TAP TO BOWL  (Ball ${ballNum + 1}/6)`, cw / 2, ch * 0.93);
+  }
+
+  function drawBowlerFigure(cx, cy) {
+    const s = 7;
+    ctx.strokeStyle = 'rgba(255,255,255,0.62)';
+    ctx.fillStyle   = 'rgba(255,255,255,0.62)';
+    ctx.lineWidth   = 1.5;
+    ctx.lineCap     = 'round';
+    // head
+    ctx.beginPath();
+    ctx.arc(cx, cy - s * 2.2, s * 0.75, 0, Math.PI * 2);
+    ctx.fill();
+    // body
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s * 1.5);
+    ctx.lineTo(cx, cy + s);
+    ctx.stroke();
+    // bowling arm
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s * 0.8);
+    ctx.lineTo(cx + s * 1.8, cy - s * 2.1);
+    ctx.stroke();
+    // ball in hand
+    ctx.fillStyle = '#cc1111';
+    ctx.beginPath();
+    ctx.arc(cx + s * 1.8, cy - s * 2.1, s * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.62)';
+    // other arm
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s * 0.8);
+    ctx.lineTo(cx - s * 1.2, cy + s * 0.1);
+    ctx.stroke();
+    // legs
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + s);
+    ctx.lineTo(cx - s, cy + s * 2.5);
+    ctx.moveTo(cx, cy + s);
+    ctx.lineTo(cx + s, cy + s * 2.5);
+    ctx.stroke();
+  }
+
+  function drawResultCard() {
+    const cw = W(), ch = H();
+    const r  = history[history.length - 1];
+    if (!r) return;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.58)';
+    ctx.fillRect(0, ch * 0.36, cw, ch * 0.28);
+
+    const col = r.runs === 0 ? '#ff5555'
+      : r.runs >= 6 ? '#FFD700'
+      : r.runs >= 4 ? '#44ff88'
+      : '#ffffff';
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = col;
+    ctx.font      = `bold ${ch * 0.062}px Arial`;
+    ctx.fillText(`${r.runs} RUN${r.runs !== 1 ? 'S' : ''}`, cw / 2, ch * 0.515);
+    ctx.font      = `${ch * 0.032}px Arial`;
+    ctx.fillText(r.label, cw / 2, ch * 0.574);
+    ctx.fillStyle = 'rgba(255,255,255,0.52)';
+    ctx.font      = `${ch * 0.024}px Arial`;
+    ctx.fillText('Next ball coming up…', cw / 2, ch * 0.625);
+  }
+
+  function drawStartScreen() {
+    const cw = W(), ch = H();
+    ctx.fillStyle = 'rgba(0,0,0,0.74)';
+    ctx.fillRect(0, 0, cw, ch);
+
+    ctx.font      = `${ch * 0.095}px serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('🏏', cw / 2, ch * 0.19);
+
+    ctx.fillStyle = '#FFD700';
+    ctx.font      = `bold ${ch * 0.072}px Arial`;
+    ctx.fillText('CRICKET', cw / 2, ch * 0.30);
+    ctx.font      = `bold ${ch * 0.046}px Arial`;
+    ctx.fillStyle = 'white';
+    ctx.fillText('BATTING CHALLENGE', cw / 2, ch * 0.375);
+
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.moveTo(cw * 0.18, ch * 0.415);
+    ctx.lineTo(cw * 0.82, ch * 0.415);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.84)';
+    ctx.font      = `${ch * 0.028}px Arial`;
+    const lines = [
+      '🎯  Face 1 over — 6 balls',
+      '↑   Swipe UP to hit the ball',
+      '⏱  Perfect timing  =  6 RUNS!',
+      '📐  Swipe direction shapes the shot',
+      '🏆  Max possible score: 36 runs',
+    ];
+    lines.forEach((l, i) => ctx.fillText(l, cw / 2, ch * 0.48 + i * ch * 0.054));
+
+    fillButton(cw / 2, ch * 0.815, cw * 0.56, ch * 0.068, 'START GAME', '#FFD700', '#000');
+  }
+
+  function drawGameOver() {
+    const cw = W(), ch = H();
+    ctx.fillStyle = 'rgba(0,0,0,0.84)';
+    ctx.fillRect(0, 0, cw, ch);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFD700';
+    ctx.font      = `bold ${ch * 0.058}px Arial`;
+    ctx.fillText('INNINGS COMPLETE!', cw / 2, ch * 0.10);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.font      = `${ch * 0.030}px Arial`;
+    ctx.fillText('TOTAL SCORE', cw / 2, ch * 0.175);
+
+    ctx.fillStyle = '#FFD700';
+    ctx.font      = `bold ${ch * 0.16}px Arial`;
+    ctx.fillText(totalScore, cw / 2, ch * 0.335);
+
+    let stars, msg;
+    if (totalScore >= 30)      { stars = '⭐⭐⭐'; msg = 'BRILLIANT KNOCK!'; }
+    else if (totalScore >= 22) { stars = '⭐⭐';  msg = 'GREAT INNINGS!';   }
+    else if (totalScore >= 14) { stars = '⭐';    msg = 'DECENT EFFORT';    }
+    else                       { stars = '';      msg = 'KEEP PRACTICING!'; }
+
+    ctx.font      = `${ch * 0.042}px serif`;
+    ctx.fillText(stars, cw / 2, ch * 0.41);
+    ctx.fillStyle = '#88ff88';
+    ctx.font      = `bold ${ch * 0.036}px Arial`;
+    ctx.fillText(msg, cw / 2, ch * 0.465);
+
+    // divider
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(cw * 0.12, ch * 0.50);
+    ctx.lineTo(cw * 0.88, ch * 0.50);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.60)';
+    ctx.font      = `${ch * 0.022}px Arial`;
+    ctx.fillText('BALL  BY  BALL', cw / 2, ch * 0.535);
+
+    // 2 columns × 3 rows
+    history.forEach((b, i) => {
+      const col = b.runs === 0 ? '#ff6666'
+        : b.runs >= 6 ? '#FFD700'
+        : b.runs >= 4 ? '#44ff88'
+        : 'white';
+      ctx.fillStyle = col;
+      ctx.font      = `${ch * 0.025}px Arial`;
+      const col2 = i < 3 ? 0 : 1;
+      const row  = i % 3;
+      const bx   = cw * 0.28 + col2 * cw * 0.45;
+      const by   = ch * 0.575 + row * ch * 0.052;
+      ctx.fillText(`B${i + 1}: ${b.runs}  ${b.label}`, bx, by);
+    });
+
+    fillButton(cw / 2, ch * 0.855, cw * 0.55, ch * 0.066, 'PLAY AGAIN', '#FFD700', '#000');
+  }
+
+  // ─── main render ─────────────────────────────────────────────────────────────
+  function render(now) {
+    const cw = W(), ch = H();
+    ctx.clearRect(0, 0, cw, ch);
+
+    if (gameState === 'START') {
+      drawField();
+      drawStartScreen();
+      return;
+    }
+    if (gameState === 'GAMEOVER') {
+      drawField();
+      drawGameOver();
+      return;
+    }
+
+    drawField();
+    drawBatsman();
+
+    if (gameState === 'READY')   drawReadyUI(now);
+    if (gameState === 'BOWLING') { drawBall(); drawTimingZone(now); drawSwipeHint(now); }
+    if (gameState === 'HIT')     drawHitFx(now);
+    if (gameState === 'RESULT')  drawResultCard();
+
+    drawHUD();
+  }
+
+  // ─── input ───────────────────────────────────────────────────────────────────
+  let ptrDownX = 0, ptrDownY = 0;
+
+  function onDown(e) {
+    const pt = e.touches ? e.touches[0] : e;
+    ptrDownX = pt.clientX;
+    ptrDownY = pt.clientY;
+  }
+
+  function onUp(e) {
+    const pt = e.changedTouches ? e.changedTouches[0] : e;
+    const dx = pt.clientX - ptrDownX;
+    const dy = pt.clientY - ptrDownY;
+
+    if (gameState === 'START')    { startGame(); return; }
+    if (gameState === 'GAMEOVER') { startGame(); return; }
+    if (gameState === 'READY')    { bowl();      return; }
+    if (gameState === 'BOWLING')  { doHit(dx, dy); return; }
+    // RESULT / HIT: ignore taps (auto-advances)
+  }
+
+  canvas.addEventListener('touchstart', onDown, { passive: true });
+  canvas.addEventListener('touchend',   onUp,   { passive: true });
+  canvas.addEventListener('mousedown',  onDown);
+  canvas.addEventListener('mouseup',    onUp);
+
+  // prevent pull-to-refresh & scroll
+  document.body.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  // ─── main loop ───────────────────────────────────────────────────────────────
+  function loop(now) {
+    update(now);
+    render(now);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+}());
+</script>
+</body>
+</html>
